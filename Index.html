@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PokéCollection – Gestionnaire de prix</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1c1c28;
+    --border: #2a2a3d;
+    --accent: #ffcc00;
+    --accent2: #ff4444;
+    --accent3: #44aaff;
+    --text: #e8e8f0;
+    --muted: #6666aa;
+    --green: #44ff88;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,204,0,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,204,0,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 16px; position: relative; z-index: 1; }
+
+  /* HEADER */
+  header {
+    padding: 28px 0 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+  }
+  .header-inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .logo {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: clamp(20px, 5vw, 32px);
+    letter-spacing: -1px;
+    color: var(--accent);
+  }
+  .logo span { color: var(--text); }
+  .badge {
+    background: var(--accent);
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 2px;
+    letter-spacing: 1px;
+  }
+  .subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* STATS BAR */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+  }
+  .stat-label { font-size: 9px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-value { font-family: var(--font-display); font-size: 22px; font-weight: 800; color: var(--accent); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.blue { color: var(--accent3); }
+
+  /* PANELS */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .panel-title {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-title .dot {
+    width: 8px; height: 8px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .panel-body { padding: 20px; }
+
+  /* IMPORT ZONE */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 4px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(255,204,0,0.04);
+  }
+  .drop-zone input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .drop-icon { font-size: 36px; margin-bottom: 12px; }
+  .drop-text { font-size: 13px; color: var(--muted); }
+  .drop-text strong { color: var(--accent); }
+  .drop-formats { font-size: 10px; color: var(--muted); margin-top: 8px; letter-spacing: 1px; }
+
+  /* TABS */
+  .tabs { display: flex; gap: 2px; flex-wrap: wrap; padding: 12px 20px 0; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 8px 16px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    letter-spacing: 1px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab .count {
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 10px;
+    margin-left: 4px;
+  }
+  .tab.active .count { background: rgba(255,204,0,0.15); color: var(--accent); }
+
+  /* TABLE */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead th {
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  tbody tr {
+    border-bottom: 1px solid rgba(42,42,61,0.5);
+    transition: background 0.1s;
+  }
+  tbody tr:hover { background: var(--surface2); }
+  tbody td { padding: 10px 12px; vertical-align: middle; }
+  .carte-name { font-weight: 700; color: var(--text); font-size: 12px; }
+  .serie-name { color: var(--muted); font-size: 11px; }
+  .num-badge {
+    background: var(--surface2);
+    color: var(--accent3);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+  }
+  .price-cell { font-family: var(--font-display); font-weight: 600; }
+  .price-cm { color: var(--accent); }
+  .price-ebay { color: var(--accent3); }
+  .price-avg { color: var(--green); }
+  .qty-badge {
+    background: var(--surface2);
+    color: var(--text);
+    padding: 2px 8px;
+    border-radius: 2px;
+    font-size: 11px;
+    display: inline-block;
+  }
+  .total-val { color: var(--text); font-weight: 700; }
+
+  /* STATUS INDICATOR */
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+  .status-dot.pending { background: var(--muted); }
+  .status-dot.loading { background: var(--accent); animation: pulse 1s infinite; }
+  .status-dot.done { background: var(--green); }
+  .status-dot.error { background: var(--accent2); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* BUTTONS */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-weight: 700;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+  }
+  .btn-primary:hover:not(:disabled) { background: #ffe033; transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-danger {
+    background: transparent;
+    color: var(--accent2);
+    border: 1px solid var(--accent2);
+  }
+  .btn-danger:hover { background: var(--accent2); color: #fff; }
+
+  /* PROGRESS */
+  .progress-wrap { margin: 16px 0; }
+  .progress-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .progress-bar {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    width: 0%;
+  }
+
+  /* LOG */
+  .log-area {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+  .log-line { margin-bottom: 3px; }
+  .log-line.ok { color: var(--green); }
+  .log-line.err { color: var(--accent2); }
+  .log-line.info { color: var(--accent3); }
+  .log-line.warn { color: var(--accent); }
+
+  /* EMPTY STATE */
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state p { font-size: 12px; }
+
+  /* TOOLBAR */
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* Highlight updated */
+  @keyframes flashGreen {
+    0% { background: rgba(68,255,136,0.25); }
+    100% { background: transparent; }
+  }
+  tr.just-updated { animation: flashGreen 1.5s ease-out; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Mobile tweaks */
+  @media (max-width: 600px) {
+    .panel-body { padding: 12px; }
+    .btn { padding: 9px 14px; font-size: 10px; }
+    tbody td { padding: 8px 8px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-inner">
+      <div>
+        <div class="logo">Poké<span>Collection</span> <span class="badge">BETA</span></div>
+        <div class="subtitle">Gestionnaire de prix Cardmarket</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- STATS -->
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-card">
+      <div class="stat-label">Total cartes</div>
+      <div class="stat-value" id="statTotal">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Valeur CM</div>
+      <div class="stat-value green" id="statCM">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Valeur Moy.</div>
+      <div class="stat-value blue" id="statMoy">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Mises à jour</div>
+      <div class="stat-value" id="statUpdated">—</div>
+    </div>
+  </div>
+
+  <!-- IMPORT PANEL -->
+  <div class="panel" id="importPanel">
+    <div class="panel-header">
+      <div class="panel-title"><span class="dot"></span>Importer ta collection</div>
+    </div>
+    <div class="panel-body">
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="fileInput" accept=".ods,.xlsx,.xls,.csv">
+        <div class="drop-icon">📂</div>
+        <div class="drop-text">Glisse ton fichier ici ou <strong>clique pour parcourir</strong></div>
+        <div class="drop-formats">Formats acceptés : .ODS · .XLSX · .XLS · .CSV</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLLECTION PANEL -->
+  <div class="panel" id="collectionPanel" style="display:none">
+    <div class="panel-header">
+      <div class="panel-title"><span class="dot"></span>Ma Collection</div>
+      <div class="toolbar">
+        <button class="btn btn-primary" id="btnUpdate" onclick="startUpdate()">⚡ MAJ Prix Cardmarket</button>
+        <button class="btn btn-secondary" id="btnExport" onclick="exportFile()">⬇ Exporter</button>
+        <button class="btn btn-danger" onclick="resetApp()">✕ Reset</button>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tabs" id="tabsContainer"></div>
+
+    <!-- PROGRESS -->
+    <div id="progressSection" style="display:none; padding: 16px 20px; border-bottom: 1px solid var(--border);">
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span id="progressText">Mise à jour en cours…</span>
+          <span id="progressPct">0%</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
+      <div class="log-area" id="logArea"></div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="panel-body" style="padding:0">
+      <div class="table-wrap" id="tableWrap"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// =============================================
+// STATE
+// =============================================
+let collection = {};       // { sheetName: [ {carte, serie, annee, numero, ebay, cm, moy, qty, total, vente, classement, _rowIdx} ] }
+let activeSheet = null;
+let isUpdating = false;
+let updatedCount = 0;
+
+const SHEETS_CARTES  = ['Cartes FR', 'Cartes Jap', 'Gradées'];
+const SHEETS_SEALED  = ['scellés FR', 'JapScel', 'Jumbo'];
+const ALL_SHEETS     = [...SHEETS_CARTES, ...SHEETS_SEALED];
+
+// =============================================
+// FILE IMPORT
+// =============================================
+document.getElementById('fileInput').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = new Uint8Array(e.target.result);
+    const wb = XLSX.read(data, { type: 'array' });
+    collection = {};
+
+    for (const sheetName of wb.SheetNames) {
+      if (!ALL_SHEETS.includes(sheetName)) continue;
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (rows.length < 2) continue;
+
+      // Skip header row (index 0), parse data rows
+      const items = [];
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const carte = String(r[0] || '').trim();
+        if (!carte) continue;
+        items.push({
+          carte:      carte,
+          serie:      String(r[1] || '').trim(),
+          annee:      r[2] || '',
+          numero:     String(r[3] || '').trim(),
+          ebay:       parseFloat(r[4]) || 0,
+          cm:         parseFloat(r[5]) || 0,
+          moy:        parseFloat(r[6]) || 0,
+          qty:        parseInt(r[7]) || 1,
+          total:      parseFloat(r[8]) || 0,
+          vente:      r[9] || '',
+          classement: r[10] || '',
+          _status:    'pending',
+          _origRow:   i
+        });
+      }
+      if (items.length > 0) collection[sheetName] = items;
+    }
+
+    if (Object.keys(collection).length === 0) {
+      alert('Aucune feuille reconnue trouvée.\nFeuilles attendues : ' + ALL_SHEETS.join(', '));
+      return;
+    }
+
+    document.getElementById('importPanel').style.display = 'none';
+    document.getElementById('collectionPanel').style.display = 'block';
+    buildTabs();
+    renderTable();
+    updateStats();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// =============================================
+// TABS
+// =============================================
+function buildTabs() {
+  const container = document.getElementById('tabsContainer');
+  container.innerHTML = '';
+  const sheets = Object.keys(collection);
+  activeSheet = sheets[0];
+
+  sheets.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (name === activeSheet ? ' active' : '');
+    btn.innerHTML = name + `<span class="count">${collection[name].length}</span>`;
+    btn.onclick = () => { activeSheet = name; setActiveTab(btn); renderTable(); };
+    container.appendChild(btn);
+  });
+}
+
+function setActiveTab(btn) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// =============================================
+// RENDER TABLE
+// =============================================
+function renderTable() {
+  const wrap = document.getElementById('tableWrap');
+  const items = collection[activeSheet] || [];
+  const isSealed = SHEETS_SEALED.includes(activeSheet);
+
+  if (items.length === 0) {
+    wrap.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>Aucune donnée dans cette feuille</p></div>';
+    return;
+  }
+
+  let html = `<table>
+    <thead><tr>
+      <th>#</th>
+      <th>Carte / Item</th>
+      <th>Série</th>
+      ${!isSealed ? '<th>N°</th>' : ''}
+      <th>Année</th>
+      <th>eBay €</th>
+      <th>CM €</th>
+      <th>Moy. €</th>
+      <th>Qté</th>
+      <th>Total €</th>
+      <th>Statut</th>
+    </tr></thead>
+    <tbody>`;
+
+  items.forEach((item, i) => {
+    const statusClass = item._status || 'pending';
+    const rowId = `row-${activeSheet.replace(/\s/g,'_')}-${i}`;
+    html += `<tr id="${rowId}">
+      <td style="color:var(--muted);font-size:10px">${item.classement || i+1}</td>
+      <td>
+        <div class="carte-name">${esc(item.carte)}</div>
+        <div class="serie-name">${esc(item.serie)}</div>
+      </td>
+      <td class="serie-name">${esc(item.serie)}</td>
+      ${!isSealed ? `<td><span class="num-badge">${esc(item.numero)}</span></td>` : ''}
+      <td style="color:var(--muted)">${item.annee}</td>
+      <td class="price-cell price-ebay">${item.ebay ? item.ebay.toFixed(2) : '—'}</td>
+      <td class="price-cell price-cm">${item.cm ? item.cm.toFixed(2) : '—'}</td>
+      <td class="price-cell price-avg">${item.moy ? item.moy.toFixed(2) : '—'}</td>
+      <td><span class="qty-badge">${item.qty}</span></td>
+      <td class="total-val">${item.total ? item.total.toFixed(2) : '—'}</td>
+      <td><span class="status-dot ${statusClass}"></span></td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function esc(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// =============================================
+// STATS
+// =============================================
+function updateStats() {
+  let total = 0, sumCM = 0, sumMoy = 0;
+
+  Object.values(collection).forEach(items => {
+    items.forEach(item => {
+      total++;
+      sumCM  += (item.cm  || 0) * (item.qty || 1);
+      sumMoy += (item.moy || 0) * (item.qty || 1);
+    });
+  });
+
+  document.getElementById('statTotal').textContent  = total;
+  document.getElementById('statCM').textContent     = sumCM  ? sumCM.toFixed(0) + ' €'  : '—';
+  document.getElementById('statMoy').textContent    = sumMoy ? sumMoy.toFixed(0) + ' €' : '—';
+  document.getElementById('statUpdated').textContent = updatedCount || '—';
+}
+
+// =============================================
+// CARDMARKET PRICE UPDATE (via Claude API)
+// =============================================
+async function startUpdate() {
+  if (isUpdating) return;
+  isUpdating = true;
+  updatedCount = 0;
+
+  document.getElementById('btnUpdate').disabled = true;
+  document.getElementById('progressSection').style.display = 'block';
+  clearLog();
+
+  // Flatten all items across all sheets
+  const allItems = [];
+  Object.entries(collection).forEach(([sheet, items]) => {
+    items.forEach((item, idx) => allItems.push({ sheet, idx, item }));
+  });
+
+  const total = allItems.length;
+  setProgress(0, total);
+  logLine(`Démarrage – ${total} articles à traiter`, 'info');
+
+  for (let i = 0; i < allItems.length; i++) {
+    const { sheet, idx, item } = allItems[i];
+    const isSealed = SHEETS_SEALED.includes(sheet);
+
+    setProgress(i, total);
+    collection[sheet][idx]._status = 'loading';
+    renderTable();
+
+    try {
+      const price = await fetchPriceViaClaude(item, isSealed);
+      if (price && price > 0) {
+        collection[sheet][idx].cm    = price;
+        collection[sheet][idx].moy   = item.ebay > 0 ? (item.ebay + price) / 2 : price;
+        collection[sheet][idx].total = collection[sheet][idx].moy * (item.qty || 1);
+        collection[sheet][idx]._status = 'done';
+        updatedCount++;
+        logLine(`✓ ${item.carte} → ${price.toFixed(2)} €`, 'ok');
+      } else {
+        collection[sheet][idx]._status = 'error';
+        logLine(`✗ ${item.carte} – prix non trouvé`, 'err');
+      }
+    } catch(err) {
+      collection[sheet][idx]._status = 'error';
+      logLine(`✗ ${item.carte} – erreur: ${err.message}`, 'err');
+    }
+
+    renderTable();
+    updateStats();
+
+    // Flash the row if it's on the active tab
+    if (sheet === activeSheet) {
+      const rowId = `row-${activeSheet.replace(/\s/g,'_')}-${idx}`;
+      const row = document.getElementById(rowId);
+      if (row) { row.classList.add('just-updated'); setTimeout(() => row.classList.remove('just-updated'), 1600); }
+    }
+
+    // Small delay between requests
+    await sleep(300);
+  }
+
+  setProgress(total, total);
+  logLine(`✔ Terminé ! ${updatedCount}/${total} mises à jour réussies`, 'warn');
+  document.getElementById('btnUpdate').disabled = false;
+  isUpdating = false;
+  updateStats();
+}
+
+// =============================================
+// CLAUDE API – Fetch Cardmarket price
+// =============================================
+async function fetchPriceViaClaude(item, isSealed) {
+  const prompt = isSealed
+    ? `Tu es un expert Pokémon. Cherche le prix actuel sur Cardmarket.com pour cet item scellé Pokémon :
+Nom : "${item.carte}"
+Série : "${item.serie}"
+
+Réponds UNIQUEMENT avec un nombre décimal (le prix en euros, ex: 12.50). Si tu ne trouves pas, réponds 0.`
+    : `Tu es un expert Pokémon. Donne-moi une estimation du prix actuel sur Cardmarket.com pour cette carte Pokémon :
+Nom : "${item.carte}"
+Série : "${item.serie}"
+Numéro : "${item.numero}"
+État : Near Mint (NM)
+
+Base-toi sur ta connaissance des prix Cardmarket. Réponds UNIQUEMENT avec un nombre décimal représentant la moyenne des 5 prix les plus bas en NM (ex: 12.50). Si tu ne connais pas, réponds 0.`;
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 100,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!response.ok) throw new Error(`API ${response.status}`);
+  const data = await response.json();
+  const text = data.content?.[0]?.text?.trim() || '0';
+  const price = parseFloat(text.replace(',', '.'));
+  return isNaN(price) ? 0 : price;
+}
+
+// =============================================
+// EXPORT
+// =============================================
+function exportFile() {
+  const wb = XLSX.utils.book_new();
+  const headers = ['Carte','Série','Année','Numéro','Valeur Ebay','Valeur CM','Moyenne','Quantité','Total','Vente','Classement'];
+
+  Object.entries(collection).forEach(([sheetName, items]) => {
+    const rows = [headers];
+    items.forEach(item => {
+      rows.push([
+        item.carte, item.serie, item.annee, item.numero,
+        item.ebay, item.cm, item.moy, item.qty, item.total,
+        item.vente, item.classement
+      ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    // Column widths
+    ws['!cols'] = [32,28,8,10,12,12,12,10,12,10,12].map(w => ({wch: w}));
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  XLSX.writeFile(wb, `Collection_Pokemon_MAJ_${today()}.xlsx`);
+  logLine('Export téléchargé !', 'ok');
+}
+
+function today() {
+  return new Date().toISOString().slice(0,10);
+}
+
+// =============================================
+// HELPERS
+// =============================================
+function resetApp() {
+  if (!confirm('Réinitialiser la collection ?')) return;
+  collection = {};
+  activeSheet = null;
+  updatedCount = 0;
+  document.getElementById('importPanel').style.display = 'block';
+  document.getElementById('collectionPanel').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  updateStats();
+}
+
+function setProgress(done, total) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressText').textContent =
+    done >= total ? 'Terminé !' : `Mise à jour : ${done} / ${total}`;
+}
+
+function logLine(msg, type = '') {
+  const area = document.getElementById('logArea');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  area.appendChild(line);
+  area.scrollTop = area.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('logArea').innerHTML = '';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
