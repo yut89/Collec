@@ -401,11 +401,14 @@
       <div class="panel-title"><span class="dot"></span>Importer ta collection</div>
     </div>
     <div class="panel-body">
-      <div class="drop-zone" id="dropZone">
-        <input type="file" id="fileInput" accept=".ods,.xlsx,.xls,.csv">
+      <div class="drop-zone" id="dropZone" style="position:relative">
         <div class="drop-icon">📂</div>
-        <div class="drop-text">Glisse ton fichier ici ou <strong>clique pour parcourir</strong></div>
-        <div class="drop-formats">Formats acceptés : .ODS · .XLSX · .XLS · .CSV</div>
+        <div class="drop-text">Sélectionne ton fichier de collection</div>
+        <div class="drop-formats" style="margin-bottom:20px">Formats acceptés : .ODS · .XLSX · .XLS · .CSV</div>
+        <label for="fileInput" class="btn btn-primary" style="cursor:pointer;display:inline-flex;font-size:13px;padding:14px 28px;">
+          📁 &nbsp; Choisir un fichier
+        </label>
+        <input type="file" id="fileInput" accept=".ods,.xlsx,.xls,.csv" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;">
       </div>
     </div>
   </div>
@@ -653,4 +656,164 @@ async function startUpdate() {
     const isSealed = SHEETS_SEALED.includes(sheet);
 
     setProgress(i, total);
-    collection[sheet][
+    collection[sheet][idx]._status = 'loading';
+    renderTable();
+
+    try {
+      const price = await fetchPriceViaClaude(item, isSealed);
+      if (price && price > 0) {
+        collection[sheet][idx].cm    = price;
+        collection[sheet][idx].moy   = item.ebay > 0 ? (item.ebay + price) / 2 : price;
+        collection[sheet][idx].total = collection[sheet][idx].moy * (item.qty || 1);
+        collection[sheet][idx]._status = 'done';
+        updatedCount++;
+        logLine(`✓ ${item.carte} → ${price.toFixed(2)} €`, 'ok');
+      } else {
+        collection[sheet][idx]._status = 'error';
+        logLine(`✗ ${item.carte} – prix non trouvé`, 'err');
+      }
+    } catch(err) {
+      collection[sheet][idx]._status = 'error';
+      logLine(`✗ ${item.carte} – erreur: ${err.message}`, 'err');
+    }
+
+    renderTable();
+    updateStats();
+
+    // Flash the row if it's on the active tab
+    if (sheet === activeSheet) {
+      const rowId = `row-${activeSheet.replace(/\s/g,'_')}-${idx}`;
+      const row = document.getElementById(rowId);
+      if (row) { row.classList.add('just-updated'); setTimeout(() => row.classList.remove('just-updated'), 1600); }
+    }
+
+    // Small delay between requests
+    await sleep(300);
+  }
+
+  setProgress(total, total);
+  logLine(`✔ Terminé ! ${updatedCount}/${total} mises à jour réussies`, 'warn');
+  document.getElementById('btnUpdate').disabled = false;
+  isUpdating = false;
+  updateStats();
+}
+
+// =============================================
+// CARDMARKET PRICE – via proxy
+// =============================================
+async function fetchPriceViaClaude(item, isSealed) {
+  const cmUrl = buildCardmarketUrl(item, isSealed);
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cmUrl)}`;
+  const response = await fetch(proxyUrl);
+  if (!response.ok) throw new Error(`Proxy ${response.status}`);
+  const data = await response.json();
+  const html = data.contents || '';
+  const prices = extractNMPrices(html, 5);
+  if (prices.length === 0) return 0;
+  return prices.reduce((a, b) => a + b, 0) / prices.length;
+}
+
+function buildCardmarketUrl(item, isSealed) {
+  const base = 'https://www.cardmarket.com/fr/Pokemon/Products/';
+  if (isSealed) {
+    return base + 'Booster-Packs/' + slugify(item.carte);
+  }
+  return base + 'Singles/' + slugify(item.serie) + '/' + slugify(item.carte);
+}
+
+function slugify(str) {
+  return (str || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/['']/g, '').replace(/[–—]/g, '-')
+    .replace(/[^a-zA-Z0-9\s-]/g, '').trim()
+    .replace(/\s+/g, '-');
+}
+
+function extractNMPrices(html, n) {
+  const prices = [];
+  const patterns = [
+    /class="[^"]*color-primary[^"]*"[^>]*>\s*([\d,\.]+)\s*€/g,
+    /([\d]+,[\d]{2})\s*€/g,
+  ];
+  for (const pattern of patterns) {
+    if (prices.length >= n) break;
+    let match;
+    const re = new RegExp(pattern.source, pattern.flags);
+    while ((match = re.exec(html)) !== null && prices.length < n) {
+      const val = parseFloat(match[1].replace(/\./g,'').replace(',','.'));
+      if (val > 0 && val < 100000) prices.push(val);
+    }
+  }
+  prices.sort((a, b) => a - b);
+  return prices.slice(0, n);
+}
+
+// =============================================
+// EXPORT
+// =============================================
+function exportFile() {
+  const wb = XLSX.utils.book_new();
+  const headers = ['Carte','Série','Année','Numéro','Valeur Ebay','Valeur CM','Moyenne','Quantité','Total','Vente','Classement'];
+
+  Object.entries(collection).forEach(([sheetName, items]) => {
+    const rows = [headers];
+    items.forEach(item => {
+      rows.push([
+        item.carte, item.serie, item.annee, item.numero,
+        item.ebay, item.cm, item.moy, item.qty, item.total,
+        item.vente, item.classement
+      ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    // Column widths
+    ws['!cols'] = [32,28,8,10,12,12,12,10,12,10,12].map(w => ({wch: w}));
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  XLSX.writeFile(wb, `Collection_Pokemon_MAJ_${today()}.xlsx`);
+  logLine('Export téléchargé !', 'ok');
+}
+
+function today() {
+  return new Date().toISOString().slice(0,10);
+}
+
+// =============================================
+// HELPERS
+// =============================================
+function resetApp() {
+  if (!confirm('Réinitialiser la collection ?')) return;
+  collection = {};
+  activeSheet = null;
+  updatedCount = 0;
+  document.getElementById('importPanel').style.display = 'block';
+  document.getElementById('collectionPanel').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  updateStats();
+}
+
+function setProgress(done, total) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressPct').textContent = pct + '%';
+  document.getElementById('progressText').textContent =
+    done >= total ? 'Terminé !' : `Mise à jour : ${done} / ${total}`;
+}
+
+function logLine(msg, type = '') {
+  const area = document.getElementById('logArea');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  area.appendChild(line);
+  area.scrollTop = area.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('logArea').innerHTML = '';
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
